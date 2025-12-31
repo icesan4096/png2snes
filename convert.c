@@ -54,37 +54,37 @@ int Convert_and_Save_Palette(libpng_interface* iface, FILE* fout, char* fname)
 /* Convert the linear format of PNG to the planar (when not in mode7)    */
 /* and tile-based format that the 5C77 and 5C78 use.                     */
 
-amb16 planar_accumulator;
-ui8 bitmap_accumulator;
-ui8 primary_mask;
-ui8 secondary_mask;
-FILE* fileout;
-char* filename;
+amb16 planar_accumulator;	// Accumulator to store the two bitplanes for each line while reading the PNG
+ui8 bitmap_accumulator;		// Accumulator to store the current PNG bitmap byte, containing 1~8 pixels' worth of data
+ui8 linear_mask;			// Mask to filter out unneeded bits in the `bitmap_accumulator`
+ui8 _1bpp_check;			// Mask to filter out the second bit if the input bitmap is 1bpp
+FILE* fileout;				// File to write to in `Convert_and_Save_Graphics`
+char* filename;				// File name to print after encountering an I/O error
 
 int Convert_and_Save_Graphics(libpng_interface* iface, png_meta* imeta, snes_depths tdepth, FILE* fout, char* fname)
 {
 	fileout = fout;
 	filename = fname;
 
-	const size_t line_area = (imeta->width * imeta->bit_depth) >> 3;
-	const size_t memory_area = line_area * imeta->height;
+	const size_t line_area = (imeta->width * imeta->bit_depth) >> 3;	// Size of a single PNG line
+	const size_t memory_area = line_area * imeta->height;				// Size of the whole bitmap
 
 	/* Allocate whole bitmap buffer */
-	ui8* btbfr = calloc(memory_area, sizeof(ui8));
+	ui8* btbfr = calloc(memory_area, sizeof(ui8));						// Pointer to the bitmap buffer
 	if (!btbfr) fail_puts_goto(failure_return, errmsg_Out_Of_Memory);
 
 	/* ... and allocate an array of rows for libPNG. */
-	ui8** lines_array = malloc(imeta->height * sizeof(ui8*));
+	ui8** lines_array = malloc(imeta->height * sizeof(ui8*));			// Array of lines for libpng to use -- this will be initialized by the loop below
 	if (!lines_array) fail_puts_goto(failure_destroy_bitmap_buffer, errmsg_Out_Of_Memory);
 
 	/* Configure the array so that libPNG can read the image into buffer */
 	{
-		ui8** lines_max = lines_array + imeta->height;
-		ui8* j = btbfr;
-		for (ui8** i = lines_array; i < lines_max; i++)
+		ui8** lines_max = lines_array + imeta->height;	// End of the `lines_array` for the loop to end at
+		ui8* current_line = btbfr;						// Pointer to the current line to write into the `lines_array`
+		for (ui8** i = lines_array; i < lines_max;)
 		{
-			*i = j;
-			j += line_area;
+			*i++ = current_line;
+			current_line += line_area;
 		}
 	}
 
@@ -95,22 +95,20 @@ int Convert_and_Save_Graphics(libpng_interface* iface, png_meta* imeta, snes_dep
 
 	/* PNG buffer navigation */
 	{
-		register ui8* head = btbfr;
-		// ui8* max = btbfr + memory_area;
+		register ui8* head = btbfr;							// Pointer to the next pixel(s) to evaluate
 
-		const ui8 shift_amount = imeta->bit_depth;
-		const size_t line_skip = line_area - shift_amount;
+		const ui8 shift_amount = imeta->bit_depth;			// Amount to shift to find the next pixel
+		const size_t line_skip = line_area - shift_amount;	// Amount of memory to skip at the end of an 8px line
 
-		const size_t repeat_current_tile = line_area << 3;
-		// const size_t next_tile = repeat_current_tile - shift_amount;
+		const size_t eight_lines = line_area << 3;			// Amount of memory to rewind to repeat the current tile for the next composite plane
 
-		const size_t next_row = repeat_current_tile - line_area;
+		const size_t next_row = eight_lines - line_area;	// Amount of memory to skip to get from the 2nd PNG line to the next row of tiles
 
-		if (imeta->bit_depth == 1) secondary_mask = 0; else secondary_mask = 0b00000010;
+		if (imeta->bit_depth == 1) _1bpp_check = 0; else _1bpp_check = 0b00000010;
 
-		ui8 total_planes;
-		int (*encode_method)() = &Encode_Planar;
-		int (*flush_method)() = &Flush_Planar;
+		ui8 total_planes;							// Total number of bits per pixel to write
+		int (*encode_method)() = &Encode_Planar;	// Function to collect pixel data (planar) or convert it to a linear pixel (mode7)
+		int (*flush_method)() = &Flush_Planar;		// Function to write collected pixel data to disk (planar)
 
 		switch (tdepth)
 		{
@@ -121,16 +119,16 @@ int Convert_and_Save_Graphics(libpng_interface* iface, png_meta* imeta, snes_dep
 			switch (shift_amount)
 			{
 			case 1:
-				primary_mask = 0b00000001;
+				linear_mask = 0b00000001;
 				break;
 			case 2:
-				primary_mask = 0b00000011;
+				linear_mask = 0b00000011;
 				break;
 			case 4:
-				primary_mask = 0b00001111;
+				linear_mask = 0b00001111;
 				break;
 			default:
-				primary_mask = 0b11111111;
+				linear_mask = 0b11111111;
 				break;
 			}
 
@@ -150,27 +148,23 @@ int Convert_and_Save_Graphics(libpng_interface* iface, png_meta* imeta, snes_dep
 			fail_puts_goto(failure_destroy_lines_array, "Target bit-depth is not supported.\n");
 		}
 
-		ui8 shift_limit;
+		ui8 shift_limit;	// Limit to avoid writing excess bitplanes
 		if (shift_amount > total_planes) shift_limit = total_planes; else shift_limit = shift_amount;
 
-		const ui32 tiles_across = imeta->width >> 3;
-		const ui32 tiles_down = imeta->height >> 3;
-
 		/* Conversion loop */
-		/* I hope you like nested loops, SUCKER! */
 
 		/* Write rows of SNES format tiles to disk. */
-		for (ui32 row_i = 0; row_i < tiles_down; row_i++)
+		for (ui8* image_end = btbfr + memory_area; head < image_end;)	// for (ui32 row_i = 0; row_i < tiles_down; row_i++)
 		{
 			/* Write a line of SNES format tiles to disk. */
-			for (ui32 tile_i = 0; tile_i < tiles_across; tile_i++)
+			for (ui8* row_end = head + line_area; head < row_end;)	// for (ui32 tile_i = 0; tile_i < tiles_across; tile_i++)
 			{
 				/* Write a single SNES format tile to disk. */
 				ui8 plane_i = 0;
 				do
 				{
 					/* Write a single composite plane of a SNES format tile to disk. */
-					for (ui8 line_i = 0; line_i < 8; line_i++)
+					for (ui8* tile_bottom = head + eight_lines; head < tile_bottom;)	// for (ui8 line_i = 0; line_i < 8; line_i++)
 					{
 						/* Write a single line of a SNES format tile to disk. */
 						ui8 shifted_bits = 8;
@@ -195,7 +189,7 @@ int Convert_and_Save_Graphics(libpng_interface* iface, png_meta* imeta, snes_dep
 						head += line_skip;			// head: skip rest of PNG line and move down to next line of same tile
 					}
 
-					head -= repeat_current_tile;	// head: go back up to top-left corner of tile to process the next compositing pass
+					head -= eight_lines;	// head: go back up to top-left corner of tile to process the next compositing pass
 					plane_i += 2;
 				}
 				while (plane_i < shift_limit);
@@ -216,7 +210,7 @@ int Convert_and_Save_Graphics(libpng_interface* iface, png_meta* imeta, snes_dep
 		}
 	}
 
-
+	if (fflush(fileout)) goto failure_ioerror_common;
 
 	
 
@@ -248,7 +242,7 @@ int Encode_Planar()
 {
 	planar_accumulator.whole <<= 1;
 	planar_accumulator.bytes.low  |=  bitmap_accumulator & 0b00000001;
-	planar_accumulator.bytes.high |= (bitmap_accumulator & secondary_mask) >> 1;
+	planar_accumulator.bytes.high |= (bitmap_accumulator & _1bpp_check) >> 1;
 
 	return 0;
 }
@@ -256,7 +250,7 @@ int Encode_Planar()
 /* --------------------------------------------------------------------- */
 int Encode_Mode7()
 {
-	if (fputc(bitmap_accumulator & primary_mask, fileout) == EOF)
+	if (fputc(bitmap_accumulator & linear_mask, fileout) == EOF)
 	{
 		fprintf(stderr, errmsg_File_Write_Error, filename, ferror_str(fileout));
 		return 1;

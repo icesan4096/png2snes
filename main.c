@@ -42,7 +42,7 @@ int Help_Screen_Switch(char** argv);
 /* Argument parsing and help screen functions                            */
 void Print_Help_Screen();
 void Print_Switch(arg_switch* switch_in);
-int Process_Switch(arg_switch* switch_in, char*** arg_i, char** arg_max);
+int Process_Switch(arg_switch* switch_in, char** arg_max);
 int Process_Argument(char* arg);
 /* --------------------------------------------------------------------- */
 /* Misc functions                                                        */
@@ -67,6 +67,7 @@ const size_t switches_array_size = sizeof(main_switches) / sizeof(arg_switch);
 /* --------------------------------------------------------------------- */
 /* Main entry point                                                      */
 
+char** argi_global;	// Index within argv
 char* prog_name;	// Command passed to start the application
 
 int main(int argc, char** argv)
@@ -84,9 +85,9 @@ int main(int argc, char** argv)
 
 	char** argmax = argv + argc;	// End of the `argv` array.
 
-	for (char** argi = argv + 1; argi < argmax; argi++)
+	for (argi_global = argv + 1; argi_global < argmax; argi_global++)
 	{
-		char* arga = *argi;	// Current argument to process
+		char* arga = *argi_global;	// Current argument to process
 
 		switch (*arga)
 		{
@@ -106,7 +107,7 @@ int main(int argc, char** argv)
 					for (switch_i = 0; switch_i < switches_array_size; switch_i++)
 					{
 						if (strcmp(argb, main_switches[switch_i].long_name)) continue;			// If strings don't match (if strcmp returns nonzero), skip switch.
-						if (Process_Switch(&main_switches[switch_i], &argi, argmax)) return 1;	// Otherwise, proceed to process selected switch.
+						if (Process_Switch(&main_switches[switch_i], argmax)) return 1;	// Otherwise, proceed to process selected switch.
 
 						break;
 					}
@@ -129,7 +130,7 @@ int main(int argc, char** argv)
 					for (switch_i = 0; switch_i < switches_array_size; switch_i++)
 					{
 						if (main_switches[switch_i].shorthand != cc) continue;					// If characters don't match, skip switch.
-						if (Process_Switch(&main_switches[switch_i], &argi, argmax)) return 1;	// Otherwise, proceed to process selected switch
+						if (Process_Switch(&main_switches[switch_i], argmax)) return 1;	// Otherwise, proceed to process selected switch
 
 						break;
 					}
@@ -205,10 +206,8 @@ void Print_Switch(arg_switch* switch_in)
 /* --------------------------------------------------------------------- */
 /* Collects arguments for the selected switch and executes its action    */
 
-int Process_Switch(arg_switch* switch_in, char*** arg_i, char** arg_max)
+int Process_Switch(arg_switch* switch_in, char** arg_max)
 {
-	// jesus... i thought triple-pointers were useless.
-
 	/* Count arguments in selected switch */
 	if (!switch_in->action) { fprintf(stderr, "Functionality for switch %s is not present.\n", switch_in->long_name); return 1; }
 
@@ -222,10 +221,10 @@ int Process_Switch(arg_switch* switch_in, char*** arg_i, char** arg_max)
 
 	for (size_t i = 0; i < cc; i++)
 	{
-		*arg_i += 1;
-		if (*arg_i >= arg_max) { fprintf(stderr, "Required parameters missing for argument %s.\n", switch_in->long_name); return 1; }
+		argi_global++;
+		if (argi_global >= arg_max) { fprintf(stderr, "Required parameters missing for argument %s.\n", switch_in->long_name); return 1; }
 
-		args_in[i] = **arg_i;
+		args_in[i] = *argi_global;
 	}
 	args_in[cc] = NULL;
 

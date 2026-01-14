@@ -12,7 +12,7 @@ png2snes can only be run from the command line.  The syntax for command line use
 - `-g OR --graphics <output path>` - Convert the PNG's graphics and output the results to `<output path>`.
 - `-d OR --depth <2, 4, 8, mode7>` - Output the converted PNG's graphics at the following bit-depth and format.
 
-The main purpose of this tool is to be used in build scripts and makefiles.  For example, a make recipe to convert the PNG and generate source code for the data, assuming the program `png2snes` is in PATH, is as follows:
+The main purpose of this tool is to be used in build scripts and makefiles.  For example, a make recipe to convert the PNG, assuming the program `png2snes` is in PATH, is as follows:
 ```makefile
 # Convert indexed PNG into 2bpp planar graphics
 %.2bpp.grp.bin: %.png

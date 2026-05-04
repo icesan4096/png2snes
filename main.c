@@ -75,7 +75,7 @@ arg_switch main_switches[] =
 {
 	{ 'p', "palette", "Output the color palette at this path.", (char* []){ "path", NULL }, &Set_Palette_Path },
 	{ 'g', "graphics", "Output the graphics at this path.", (char* []){ "path", NULL }, &Set_Graphics_Path },
-	{ 'd', "depth", "Convert the graphics to this bit-depth.", (char* []){ "2, 4, 8, mode7", NULL }, &Set_Bit_Depth },
+	{ 'd', "depth", "Convert the graphics to this bit-depth.", (char* []){ "2, 4, 8, mode7, nes", NULL }, &Set_Bit_Depth },
 	{ '?', "help", "Display this help screen.", (char* []){ NULL }, &Help_Screen_Switch }
 };
 const size_t switches_array_size = sizeof(main_switches) / sizeof(arg_switch);
@@ -384,9 +384,15 @@ int Set_Bit_Depth(char** argv)
 	if (!(*arg)) { fputs(err_Invalid_Arg, stderr); return 1; }
 	if (arg[1])
 	{
-		if (strcmp(arg, "mode7")) { fputs(err_Invalid_Arg, stderr); return 1; }
+		// `-d mode7`
+		if (!strcmp(arg, "mode7")) target_depth = smode7;
 
-		target_depth = smode7;
+		// `-d nes`
+		else if (!strcmp(arg, "nes")) target_depth = s2c02;
+
+		// `-d (unsupported format)`
+		else { fputs(err_Invalid_Arg, stderr); return 1; }
+
 		return 0;
 	}
 

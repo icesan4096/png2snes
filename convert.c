@@ -31,8 +31,10 @@
 
 int Encode_Planar();
 int Encode_Mode7();
+int Encode_NES();
 int Flush_Planar();
 int Flush_Mode7();
+int Flush_NES();
 
 
 /* --------------------------------------------------------------------- */
@@ -125,6 +127,7 @@ int Convert_and_Save_Graphics(libpng_interface* iface, png_meta* imeta, snes_dep
 		if (imeta->bit_depth == 1) _1bpp_check = 0; else _1bpp_check = 0b00000010;
 
 		ui8 total_planes;							// Total number of bits per pixel to write
+		ui8 shift_increment = 2;					// Amount of bits to shift to reach the next plane
 		int (*encode_method)() = &Encode_Planar;	// Function to collect pixel data (planar) or convert it to a linear pixel (mode7)
 		int (*flush_method)() = &Flush_Planar;		// Function to write collected pixel data to disk (planar)
 
@@ -150,6 +153,11 @@ int Convert_and_Save_Graphics(libpng_interface* iface, png_meta* imeta, snes_dep
 				break;
 			}
 
+		case s2c02:
+			encode_method = &Encode_NES;
+			flush_method = &Flush_NES;
+
+			shift_increment = 1;
 		case s2bpp:
 			total_planes = 2;
 			break;
@@ -208,17 +216,19 @@ int Convert_and_Save_Graphics(libpng_interface* iface, png_meta* imeta, snes_dep
 					}
 
 					head -= eight_lines;	// head: go back up to top-left corner of tile to process the next compositing pass
-					plane_i += 2;
+					plane_i += shift_increment;
 				}
 				while (plane_i < shift_limit);
 
 				/* Filler planes for when supplied PNG is at a lower bit depth */
 				while (plane_i < total_planes)
 				{
-					for (ui8 i = 0; i < 16; i++)
+					const ui8 pad_amount = shift_increment << 3;
+					
+					for (ui8 i = 0; i < pad_amount; i++)
 						if (fputc(0, fileout) == EOF) goto failure_ioerror_common;
 
-					plane_i += 2;
+					plane_i += shift_increment;
 				}
 
 				head += shift_amount;	// head: move 8 pixels across to next tile
@@ -278,6 +288,14 @@ int Encode_Mode7()
 }
 
 /* --------------------------------------------------------------------- */
+int Encode_NES()
+{
+	planar_accumulator.bytes.low = (planar_accumulator.bytes.low << 1) | (bitmap_accumulator & 0b00000001);
+	
+	return 0;
+}
+
+/* --------------------------------------------------------------------- */
 int Flush_Planar()
 {
 	if (fputc(planar_accumulator.bytes.low,  fileout) == EOF) goto failure_ioerror_common;
@@ -294,5 +312,18 @@ failure_ioerror_common:
 /* --------------------------------------------------------------------- */
 int Flush_Mode7()
 {
+	return 0;
+}
+
+/* --------------------------------------------------------------------- */
+int Flush_NES()
+{
+	if (fputc(planar_accumulator.bytes.low, fileout) == EOF)
+	{
+		fprintf(stderr, errmsg_File_Write_Error, filename, ferror_str(fileout));
+		
+		return 1;
+	}
+	
 	return 0;
 }

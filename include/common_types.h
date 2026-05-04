@@ -40,11 +40,12 @@ png_meta;
 
 typedef enum snes_depths
 {
-	snull,
-	s2bpp,
-	s4bpp,
-	s8bpp,
-	smode7
+	snull,	// Invalid bit-depth mode
+	s2bpp,	// 2bpp SNES format
+	s4bpp,	// 4bpp format, composite of 2 2bpp tiles
+	s8bpp,	// 8bpp format, composite of 4 2bpp tiles
+	smode7,	// 8bpp Mode 7 format, linear format graphics
+	s2c02	// 2bpp NES format
 }
 snes_depths;
 

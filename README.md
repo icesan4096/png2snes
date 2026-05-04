@@ -113,3 +113,16 @@ The 15 bit-per-color BGR format allows up to 32,768 unique combinations of blue,
    ||| ||++-+++------- Green component
    +++-++------------- Blue component
 ```
+
+## NES format graphics
+The NES's graphics format is similar to the SNES's 4bpp mode, only that the second plane per horizontal row is cut off, effectively making the tile 2 bits per pixel with different rules than the standard SNES 2bpp format.
+
+```
+    +--------+     +--------+     +-----------------------+
+ 0. |01234567|  8. |89ABCDEF|  =  |80 91 A2 B3 C4 D5 E6 F7|
+    +--------+     +--------+     +-----------------------+
+               . . .
+    +--------+     +--------+     +-----------------------+
+ 7. |GHIJKLMN| 15. |OPQRSTUV|  =  |OG PH QI RJ SK TL UM VN|
+    +--------+     +--------+     +-----------------------+
+```
